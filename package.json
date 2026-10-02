@@ -12,12 +12,14 @@
     ".": "./src/oauth.mjs",
     "./gateway": "./src/gateway.mjs",
     "./store": "./src/store.mjs",
+    "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
   "files": [
     "bin",
     "src",
     "dsh",
+    "locale",
     "README.md",
     "README.zh.md",
     "LICENSE"
@@ -28,6 +30,15 @@
   "scripts": {
     "test": "node --test",
     "start": "node ./bin/mcp-oauth-gateway.mjs"
+  },
+  "meta": {
+    "title": "MCP OAuth Gateway",
+    "description": "Runs a loopback gateway an MCP client can point at without any OAuth support: the gateway performs RFC 9728 discovery, PKCE and silent token refresh, and the client keeps a stable local token that is not the OAuth credential."
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./dsh/cordis.patch.yml"
+    }
   },
   "keywords": [
     "mcp",

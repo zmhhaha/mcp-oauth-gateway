@@ -66,8 +66,14 @@ node bin/mcp-oauth-gateway.mjs print-config --url https://your-mcp-host/mcp
 
 ### DSH（DeepSeek Harness）
 
-DSH 的 MCP 客户端**完全不支持 OAuth**，所以这就是它的主场。见 [`dsh/README.md`](dsh/README.md)：
-在 Plugins 面板里安装该 bundle，把 `print-config` 给出的两个值贴进去即可。
+DSH 的 MCP 客户端**完全不支持 OAuth**，所以这就是它的主场。
+
+**这个仓库本身就是那个 DSH bundle**（根 `package.json` 声明了 `dsh.bundle.patch`），所以 Plugins
+面板可以直接用本仓库的 Git 地址或本地路径安装。（DSH **没有可浏览的插件市场**：它只接受 npm 包名、
+Git 仓库地址、压缩包或本地路径，界面里另外只列 DSH 自带的官方插件。按包名安装需要先把本包发到 npm，
+目前**尚未发布**。）
+
+`print-config` 给出的两个值怎么填、以及注意事项，见 [`dsh/README.md`](dsh/README.md)。
 
 ### 任何支持自定义头的客户端
 

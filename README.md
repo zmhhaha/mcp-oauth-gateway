@@ -69,9 +69,15 @@ to `login`. The error message tells you the redirect URI to register.
 
 ### DSH (DeepSeek Harness)
 
-DSH's MCP client has no OAuth at all, so this is the intended use case. See
-[`dsh/README.md`](dsh/README.md) — install the bundle in the Plugins panel and paste the two
-values `print-config` gives you.
+DSH's MCP client has no OAuth at all, so this is the intended use case.
+
+This repository **is** the DSH bundle — its `package.json` declares `dsh.bundle.patch` — so the
+Plugins panel can install it straight from this repository's URL or from a local checkout.
+(DSH has no browsable marketplace: it installs from a package name on npm, a Git repository URL,
+a tarball, or a local path, and otherwise only lists DSH's own official plugins. A package-name
+install would need this package published to npm; it currently is not.)
+
+See [`dsh/README.md`](dsh/README.md) for the two values `print-config` gives you, and the caveats.
 
 ### Any client that accepts custom headers
 

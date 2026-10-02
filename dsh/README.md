@@ -24,9 +24,25 @@ node bin/mcp-oauth-gateway.mjs serve --url https://your-mcp-host/mcp --port 3341
 
 ## 2. Install this bundle
 
-In the DSH Web UI, open the **Plugins** panel in the sidebar and install this directory as a
-local bundle (`dsh/`), or paste its `cordis.patch.yml` contents into your profile's
-`cordis.patch.yml`.
+**DSH has no browsable plugin marketplace.** Its Plugins panel installs from a **package name**
+(npm), a **Git repository URL**, a **tarball**, or a **local path**; it also lists the official
+plugins that ship with DSH and the bundles already installed. So there is nothing to "find" —
+you install from one of those sources.
+
+This repository *is* the bundle: its `package.json` declares `dsh.bundle.patch`, pointing at
+[`dsh/cordis.patch.yml`](cordis.patch.yml). Install it any of these ways:
+
+| Source | What to give the Plugins panel |
+|---|---|
+| Local path | the **repository root** (the directory containing `package.json`) |
+| Git repository | `https://github.com/zmhhaha/mcp-oauth-gateway` |
+| Package name | `mcp-oauth-gateway` — **only after it is published to npm**; it currently is not, so this route will report that the package does not exist |
+
+The installation dialog also lets you choose the npm registry (official npm, the mainland-China
+mirror, or a custom address); that only matters for the package-name route.
+
+If you would rather not install a bundle at all, paste the contents of `dsh/cordis.patch.yml`
+into your profile's `cordis.patch.yml` by hand — same effect.
 
 Then replace the two placeholders:
 
@@ -36,7 +52,9 @@ Then replace the two placeholders:
 | `x-mcp-gateway-token: CHANGE_ME` | the token printed by `serve` / `print-config` |
 
 The token is the gateway's own stable secret. It is deliberately **not** the OAuth token, so
-this file never changes when the OAuth token rotates.
+this file never changes when the OAuth token rotates. (It has to be pasted rather than derived:
+the MCP client's `headers` are static config, and the loader evaluates `!!js` expressions once
+at load, so there is no hook that could read it at request time.)
 
 ## 3. Verify
 
