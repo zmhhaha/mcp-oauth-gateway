@@ -54,7 +54,9 @@ Each row needs its own `serverName`.
 
 - **The gateway must be running.** DSH starts no process for it; run it however you keep local
   services alive (a startup shortcut, a service manager, a terminal). If it is down, the tools
-  fail with a connection error.
+  fail with a connection error. Keep it running rather than starting it on demand: the refresh
+  token rotates only while the gateway runs, and a refresh token has its own lifetime on the
+  authorization server — if the gateway stays down past it, you have to `login` again.
 - **A restart of the MCP server invalidates the MCP session.** The gateway forwards that
   faithfully: the server answers `404` (per the MCP spec) and DSH's client does **not**
   re-`initialize` on its own. Recover by starting a new conversation, toggling the row, or

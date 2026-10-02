@@ -134,6 +134,10 @@ should keep using their own flow — this gateway is for the ones that can't.
   machine as a shared user.
 - **One upstream per process**, one login at a time, in-memory state. Run several gateways (one
   port each) for several MCP servers.
+- **Keep it running.** Tokens refresh only while the gateway runs. A refresh token has its own
+  lifetime on the authorization server, so a gateway that stays down past it needs a fresh
+  `login` — starting it on demand works, but leaving it running is what makes the setup
+  hands-off.
 - **No retry on a mid-flight `401`.** Expiry is handled proactively (including reading `exp` from
   the JWT when the server omits `expires_in`); a token that the server rejects anyway means
   re-login.
