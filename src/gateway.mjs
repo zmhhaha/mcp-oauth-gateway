@@ -245,7 +245,13 @@ export async function createGateway(options) {
     try {
       const code = params.get('code');
       const returnedState = params.get('state');
-      if (!pending) throw new OAuthError('this login did not start from this gateway (no pending flow)');
+      // No pending flow means either a stale/foreign callback, or — the confusing case — a
+      // second attempt after a successful one. Say so, instead of implying failure.
+      if (!pending)
+        throw new OAuthError(
+          'there is no pending login from this gateway. If you already completed one, it succeeded — ' +
+            'check `status` (or /healthz) instead of this page. Otherwise start a new login.',
+        );
       if (!secretMatches(pending.state, returnedState || '')) throw new OAuthError('state mismatch — refusing the response');
       if (params.get('error'))
         throw new OAuthError(`authorization failed: ${params.get('error')} ${params.get('error_description') || ''}`.trim());
@@ -379,7 +385,10 @@ export async function createGateway(options) {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
         return res.end(
           '<!doctype html><meta charset="utf-8"><title>Authorize</title><h1>Authorize access</h1>' +
-            `<p>If the browser did not open, follow this link:</p><p><a href="${escapeHtml(authorizeUrl)}">${escapeHtml(authorizeUrl)}</a></p>`,
+            `<p>If the browser did not open, follow this link:</p><p><a href="${escapeHtml(authorizeUrl)}">${escapeHtml(authorizeUrl)}</a></p>` +
+            '<p><strong>Use the browser where you are already signed in to the authorization server.</strong> ' +
+            'An embedded preview window or a browser without a session there will ask you to sign in, and ' +
+            'that step often cannot complete inside a popup.</p>',
         );
       }
 
@@ -444,7 +453,10 @@ export async function login(options) {
   const gateway = await createGateway(options);
   try {
     const authorizeUrl = await gateway.beginLogin();
-    log(`\nOpen this URL to authorize:\n  ${authorizeUrl}\n`);
+    log(
+      `\nOpen this URL to authorize (in the browser where you are already signed in to the\n` +
+        `authorization server — an embedded preview or popup window usually cannot sign in):\n  ${authorizeUrl}\n`,
+    );
     if (shouldOpenBrowser) gateway.openBrowser(authorizeUrl);
     log(`waiting for the redirect on ${gateway.redirectUri} (Ctrl-C to abort) …`);
     const description = await gateway.waitForLogin(LOGIN_TIMEOUT_MS);

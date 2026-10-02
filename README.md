@@ -154,6 +154,7 @@ should keep using their own flow — this gateway is for the ones that can't.
 | `... does not advertise a registration_endpoint` | Same, and there is nothing to register against | Same |
 | `401 ... unexpected "aud" claim value` from the MCP server, right after a successful login | The token's audience is the `resource` while the server only allows the `client_id` (or vice versa) | Accept both in the server's audience allow-list |
 | Login page loads, then "redirect URI mismatch" | The redirect URI is not registered | Register `http://<redirect-host>:<port>/oauth/callback` — or `http://localhost:*` if your server supports wildcards |
+| The authorization server says something like **"Failed to sign in"** | The URL was opened in a context that has no session there — an embedded preview/popup window, or a different browser. (Some clients open links in a webview, which also cannot finish a provider sign-in.) | Open it in the browser where you are signed in. `login` already opens your default browser, so prefer letting it do that. If the gateway still completed the flow, it succeeded — check `status` rather than the window you were looking at |
 | Browser says success, client still unauthenticated | The client got a token but it is not bound to this server (RFC 8707 `resource`) | Same as the `aud` row |
 | Works, then stops after some days | The refresh token was revoked, or the server rotated it before Casdoor supported that | Re-run `login` |
 | `Protocol "https:" not supported` | Would be a bug in this gateway | Please report it |

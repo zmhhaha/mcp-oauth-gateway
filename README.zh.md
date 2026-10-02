@@ -142,6 +142,7 @@ curl -sS -X POST http://127.0.0.1:33419/mcp \
 | `... does not advertise a registration_endpoint` | 同上，且没地方注册 | 同上 |
 | 登录成功后 MCP 服务器仍报 `401 ... unexpected "aud" claim value` | token 的 audience 是 `resource`，而服务器只允许 `client_id`（或反过来） | 服务器的 audience 白名单里**两个都收** |
 | 登录页能开，之后报 redirect URI mismatch | 回调地址未登记 | 登记 `http://<redirect-host>:<port>/oauth/callback`；服务器支持通配就登记 `http://localhost:*` |
+| 授权服务器页面报 **"Failed to sign in"** 之类 | 打开链接的上下文在那里**没有会话** —— 内嵌预览窗口/弹窗，或另一个浏览器。有些客户端在内嵌 webview 里开链接，那种环境也完不成第三方登录 | 用你**已登录**的那个浏览器打开。`login` 本来就会自动打开默认浏览器，优先让它开。另外：**如果网关那边其实已经走完了流程，那就是成功了** —— 看 `status` 而不是你看的那个窗口 |
 | 浏览器显示成功，客户端仍显示未认证 | 客户端拿到 token 了，但没绑定到这台服务器（RFC 8707 `resource`） | 同 `aud` 那一条 |
 | 用得好好的，若干天后失效 | refresh token 被吊销，或服务器在这版还不支持轮转 | 重新跑 `login` |
 | `Protocol "https:" not supported` | 那会是本网关的 bug | 请提 issue |
