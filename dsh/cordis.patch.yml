@@ -1,0 +1,24 @@
+# Connects DSH to an MCP server through mcp-oauth-gateway.
+#
+# DSH's MCP client sends a static `Authorization` header and has no OAuth support, so it
+# cannot talk to a server that implements the MCP authorization flow. This row points it at
+# the loopback gateway instead, which holds the OAuth tokens and refreshes them silently.
+#
+# Before installing, start the gateway once and copy the values it prints:
+#
+#   node bin/mcp-oauth-gateway.mjs serve --url https://your-mcp-host/mcp --port 33419
+#
+# `mcp-oauth-gateway print-config --url <mcp-url>` prints this whole block ready to paste.
+- insert:
+    - id: mcp-oauth-gateway
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: CHANGE_ME
+        transport: streamable-http
+        # Point at the gateway, not at the real server.
+        url: http://127.0.0.1:33419/mcp
+        headers:
+          # The gateway's own stable token — NOT an OAuth credential. It never expires,
+          # so this file never has to be touched again when the OAuth token rotates.
+          x-mcp-gateway-token: CHANGE_ME
+        failOnStartupError: false

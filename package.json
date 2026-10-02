@@ -1,0 +1,46 @@
+{
+  "name": "mcp-oauth-gateway",
+  "version": "0.1.0",
+  "description": "OAuth 2.1 for MCP clients that only know how to send a static Authorization header: a loopback gateway that does RFC 9728 discovery, PKCE and silent refresh on their behalf.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "mcp-oauth-gateway": "./bin/mcp-oauth-gateway.mjs"
+  },
+  "main": "./src/oauth.mjs",
+  "exports": {
+    ".": "./src/oauth.mjs",
+    "./gateway": "./src/gateway.mjs",
+    "./store": "./src/store.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin",
+    "src",
+    "dsh",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test",
+    "start": "node ./bin/mcp-oauth-gateway.mjs"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "oauth",
+    "oauth2",
+    "oauth21",
+    "pkce",
+    "rfc9728",
+    "rfc8707",
+    "rfc8414",
+    "dsh",
+    "proxy",
+    "gateway"
+  ]
+}

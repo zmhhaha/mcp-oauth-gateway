@@ -1,0 +1,4 @@
+{
+  "title": "MCP OAuth Gateway",
+  "description": "Points the DSH MCP client at a local mcp-oauth-gateway, which performs the OAuth 2.1 flow and refreshes tokens on DSH's behalf."
+}

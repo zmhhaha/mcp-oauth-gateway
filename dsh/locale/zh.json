@@ -1,0 +1,4 @@
+{
+  "title": "MCP OAuth 网关",
+  "description": "把 DSH 的 MCP 客户端指向本机的 mcp-oauth-gateway，由后者完成 OAuth 2.1 授权并在后台自动续期。"
+}

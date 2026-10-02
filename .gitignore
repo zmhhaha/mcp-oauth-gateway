@@ -1,0 +1,9 @@
+node_modules/
+npm-debug.log*
+*.log
+.DS_Store
+Thumbs.db
+
+# Runtime state, if someone points --store at the repo instead of the OS config dir.
+.mcp-oauth-gateway/
+*.local.json
