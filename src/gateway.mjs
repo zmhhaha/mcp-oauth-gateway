@@ -28,8 +28,11 @@ import {
   decodeJwtPayload,
   discoverMcp,
   exchangeCode,
+  normalizeDeviceAuthorization,
   pickEndpoints,
+  pollDeviceToken,
   refreshTokens,
+  requestDeviceCode,
   resolveClient,
 } from './oauth.mjs';
 import { applyTokenResponse, describeState, ensureLocalToken, saveState, tokenStatus } from './store.mjs';
@@ -465,4 +468,98 @@ export async function login(options) {
   } finally {
     await gateway.stop();
   }
+}
+
+/**
+ * The RFC 8628 login, for hosts that have no browser and no way to receive a redirect:
+ * a container, a CI runner, a server. This code path never listens on a socket, so nothing
+ * local can intercept the authorization code, and no port forwarding is involved — the human
+ * approves on whatever device already has a session with the authorization server.
+ *
+ * Returns the state description plus the `device` block a caller needs to display.
+ */
+export async function loginWithDeviceCode(options) {
+  const {
+    mcpUrl,
+    state,
+    stateFile,
+    log = () => {},
+    clientId: configuredClientId,
+    scopes = ['openid', 'email', 'profile'],
+    authorizationServer,
+    fetchImpl = fetch,
+    now,
+    sleep,
+  } = options;
+
+  log(`discovering authorization server for ${mcpUrl} …`);
+  const discovery = await discoverMcp(mcpUrl, { fetchImpl, authorizationServer });
+  const { tokenEndpoint } = pickEndpoints(discovery.metadata);
+  const deviceAuthorizationEndpoint = discovery.metadata.device_authorization_endpoint;
+  if (!deviceAuthorizationEndpoint) {
+    throw new OAuthError(
+      `${discovery.authorizationServer} does not advertise a device_authorization_endpoint, so the ` +
+        `device flow is unavailable. Use the browser flow, or run this gateway on a machine with a browser.`,
+    );
+  }
+
+  const redirectUri = `http://${options.redirectHost || 'localhost'}:${options.proxyPort || 33419}/oauth/callback`;
+  const { clientId, dynamicallyRegistered } = await resolveClient({
+    metadata: discovery.metadata,
+    clientId: configuredClientId,
+    redirectUri,
+    fetchImpl,
+  });
+
+  state.mcpUrl = mcpUrl;
+  state.resource = discovery.resource;
+  state.authorizationServer = discovery.authorizationServer;
+  state.clientId = clientId;
+  state.dynamicallyRegistered = dynamicallyRegistered;
+  saveState(stateFile, state);
+
+  const authorization = normalizeDeviceAuthorization(
+    await requestDeviceCode({
+      deviceAuthorizationEndpoint,
+      clientId,
+      scope: scopes,
+      resource: discovery.resource,
+      fetchImpl,
+    }),
+  );
+
+  const open = authorization.verificationUriComplete || authorization.verificationUri;
+  log(
+    `\nTo authorize, open this URL on any device (phone, laptop) where you are signed in to the\n` +
+      `authorization server:\n  ${open}\n` +
+      `and enter the code:\n\n      ${authorization.userCode}\n\n` +
+      `The code expires in ${Math.round(authorization.expiresInSeconds / 60)} minutes; this command keeps\n` +
+      `polling until you approve (Ctrl-C to abort).\n`,
+  );
+
+  const tokens = await pollDeviceToken({
+    tokenEndpoint,
+    clientId,
+    deviceCode: authorization.deviceCode,
+    intervalSeconds: authorization.intervalSeconds,
+    expiresInSeconds: authorization.expiresInSeconds,
+    resource: discovery.resource,
+    fetchImpl,
+    now,
+    sleep,
+    onWait: ({ remainingMs }) =>
+      log(`waiting for approval (${Math.max(0, Math.ceil(remainingMs / 1000))}s left) …`),
+  });
+  applyTokenResponse(state, tokens);
+  saveState(stateFile, state);
+  log(`stored credentials in ${stateFile}`);
+
+  return {
+    ...describeState(state),
+    device: {
+      userCode: authorization.userCode,
+      verificationUri: authorization.verificationUri,
+      verificationUriComplete: authorization.verificationUriComplete,
+    },
+  };
 }

@@ -20,6 +20,15 @@ node bin/mcp-oauth-gateway.mjs login --url https://your-mcp-host/mcp
 node bin/mcp-oauth-gateway.mjs serve --url https://your-mcp-host/mcp --port 33419
 ```
 
+On a host with no browser — DSH in a container or on a server, say — use the device flow instead:
+it opens no listener and needs no redirect, so nothing outside the process is involved in the
+login. You approve a short code on any device that already has a session with the authorization
+server.
+
+```bash
+node bin/mcp-oauth-gateway.mjs login --device --url https://your-mcp-host/mcp --client-id <id>
+```
+
 `print-config` prints the exact block below, already filled in with your port and token.
 
 ## 2. Install this bundle
@@ -36,7 +45,7 @@ This repository *is* the bundle: its `package.json` declares `dsh.bundle.patch`,
 |---|---|
 | Local path | the **repository root** (the directory containing `package.json`) |
 | Git repository | `https://github.com/zmhhaha/mcp-oauth-gateway` |
-| Package name | `mcp-oauth-gateway` — **only after it is published to npm**; it currently is not, so this route will report that the package does not exist |
+| Package name | `mcp-oauth-gateway` (published on npm) |
 
 The installation dialog also lets you choose the npm registry (official npm, the mainland-China
 mirror, or a custom address); that only matters for the package-name route.

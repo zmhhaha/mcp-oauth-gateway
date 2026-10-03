@@ -67,6 +67,26 @@ Or from a checkout (`git clone https://github.com/zmhhaha/mcp-oauth-gateway`), r
 If your authorization server does not offer dynamic client registration, add `--client-id <id>`
 to `login`. The error message tells you the redirect URI to register.
 
+### Headless hosts: containers, CI, servers
+
+The flow above opens a browser and receives the redirect on `http://localhost:<port>/oauth/callback`,
+which cannot work on a host with no browser. Use the **RFC 8628 device flow** instead — no browser,
+no listener, no port forwarding, nothing outside the process is needed to complete it:
+
+```bash
+npx mcp-oauth-gateway login --device --url https://your-mcp-host/mcp --client-id <id>
+```
+
+It prints a short code and a URL. Open that URL on **any** device where you are already signed in
+to the authorization server — a phone is fine — and enter the code. The command polls until you
+approve, then stores exactly what the browser flow would have stored (refresh token included), so
+later restarts renew silently.
+
+The authorization server must advertise `device_authorization_endpoint` and must have the device
+flow enabled for your client. For Casdoor that means the application needs **both** the `Device
+Code` grant type and a `Device login` signin method; 4.11.0's UI can set only the first, so see
+[Casdoor notes](docs/casdoor.md#7-enabling-the-device-flow).
+
 ## Pointing a client at it
 
 ### DSH (DeepSeek Harness)
@@ -76,8 +96,8 @@ DSH's MCP client has no OAuth at all, so this is the intended use case.
 This repository **is** the DSH bundle — its `package.json` declares `dsh.bundle.patch` — so the
 Plugins panel can install it straight from this repository's URL or from a local checkout.
 (DSH has no browsable marketplace: it installs from a package name on npm, a Git repository URL,
-a tarball, or a local path, and otherwise only lists DSH's own official plugins. A package-name
-install would need this package published to npm; it currently is not.)
+a tarball, or a local path, and otherwise only lists DSH's own official plugins. This package is
+published on npm, so the package-name route works too.)
 
 See [`dsh/README.md`](dsh/README.md) for the two values `print-config` gives you, and the caveats.
 

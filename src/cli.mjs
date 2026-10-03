@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 
 import { OAuthError } from './oauth.mjs';
-import { createGateway, login } from './gateway.mjs';
+import { createGateway, login, loginWithDeviceCode } from './gateway.mjs';
 import { defaultStoreDir, describeState, ensureLocalToken, loadState, saveState, storeFileFor } from './store.mjs';
 
 const USAGE = `mcp-oauth-gateway — OAuth 2.1 for MCP clients that only speak a static header
@@ -21,7 +21,8 @@ Usage
   mcp-oauth-gateway <command> --url <mcp-url> [options]
 
 Commands
-  login          Authorize in a browser and store the tokens (refresh token included)
+  login          Authorize and store the tokens (refresh token included)
+                 add --device on a host with no browser (RFC 8628 device flow)
   serve          Run the loopback gateway; point your MCP client at the printed URL
   status         Show the stored credential (never prints the tokens themselves)
   refresh        Force a token refresh now (useful from a scheduled task)
@@ -36,6 +37,7 @@ Options
   --scope <list>         space or comma separated scopes          (default openid,email,profile)
   --auth-server <url>    issuer override when the server has no RFC 9728 challenge
   --store <dir>          state directory  (default ${defaultStoreDir()})
+  --device               device flow: no browser, no listener, no redirect (for containers)
   --no-open              do not try to open a browser (print the URL instead)
   --quiet                suppress progress output
   -h, --help             this text
@@ -156,10 +158,12 @@ async function main(argv) {
   switch (command) {
     case 'login': {
       const { url, state, stateFile } = loadOrInit({ ...options, url: required(options, 'url') });
-      const description = await login({
-        ...gatewayOptions(options, { state, stateFile, url, log }),
-        openBrowser: !options.noOpen,
-      });
+      const description = options.device
+        ? await loginWithDeviceCode({ ...gatewayOptions(options, { state, stateFile, url, log }) })
+        : await login({
+            ...gatewayOptions(options, { state, stateFile, url, log }),
+            openBrowser: !options.noOpen,
+          });
       process.stdout.write(`${JSON.stringify(description, null, 2)}\n`);
       return 0;
     }

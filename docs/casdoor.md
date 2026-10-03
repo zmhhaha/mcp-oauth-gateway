@@ -112,3 +112,31 @@ Casdoor serves both `/.well-known/oauth-authorization-server` and
 `/.well-known/openid-configuration`. Use the discovery documents rather than hard-coding
 endpoints — `jwks_uri` in particular is `/.well-known/jwks` with **no** `.json` suffix, which is
 an easy thing to get wrong by pattern-matching.
+
+## 7. Enabling the device flow
+
+Two separate checks gate RFC 8628, and both live on the **application**:
+
+| Check | Enforced at | Symptom when it is off |
+|---|---|---|
+| the app's `signinMethods` contains `Device login` | `controllers/auth.go`, `HasSigninMethod("Device login")` | `POST /api/device-auth` answers `unauthorized_client`: *device login is not enabled for this application* |
+| the app's `grantTypes` contains `urn:ietf:params:oauth:grant-type:device_code` | `object/token_oauth.go`, `IsGrantTypeValid` | the device code is issued, then the token exchange is refused |
+
+In 4.11.0 the **new console can set only the second one**. The application's *OIDC/OAuth* tab has a
+grant-types picker that lists `Device Code`, but the *Signin methods* editor was not carried over
+from the old console: `web-old/src/ApplicationEditPage.js` still renders it, while the new per-tab
+components under `web/src/components/application/` contain no `signinMethod` reference at all, and
+the built bundle carries no such label. Saving from the new UI **preserves** an existing
+`Device login` entry — the whitelist in `web/src/pages/ApplicationEditPage.tsx` includes that name
+— it just cannot add one.
+
+So set `signinMethods` through the database or the admin API; `POST /api/update-application` with an
+admin token refreshes the in-memory cache, while a direct SQL edit does not (§5). The entry itself:
+
+```json
+{ "name": "Device login", "displayName": "Device login", "rule": "All" }
+```
+
+`HasSigninMethod` matches `name` exactly and ignores hidden rows, so the name must be
+`Device login` verbatim. Afterwards, `POST {issuer}/api/device-auth` with the client id should
+return `device_code`/`user_code` instead of the error above.

@@ -64,6 +64,24 @@ npx mcp-oauth-gateway print-config --url https://your-mcp-host/mcp
 若你的授权服务器不提供动态注册，`login` 时加 `--client-id <id>`；报错信息会告诉你该登记哪个
 回调地址。
 
+### 无浏览器的主机：容器、CI、服务器
+
+上面的流程要开浏览器、并把回调收到 `http://localhost:<端口>/oauth/callback`——在没有浏览器的机器上
+做不到。改用 **RFC 8628 设备授权码流程**：**不需要浏览器、不监听任何端口、不需要端口转发**，整个
+认证过程由这个进程自己完成：
+
+```bash
+npx mcp-oauth-gateway login --device --url https://your-mcp-host/mcp --client-id <id>
+```
+
+它会打印一个**短码**和一个**网址**。你在**任意一台已经登录授权服务器的设备**上打开那个网址（手机也
+行）、输入短码即可。命令会一直轮询直到你同意，然后把与浏览器流程**完全相同**的东西存下来（含 refresh
+token），之后重启都静默续期。
+
+前提：授权服务器要公布 `device_authorization_endpoint`，并且**为该客户端开启设备流程**。对 Casdoor
+来说，应用需要**同时**具备 `Device Code` grant type 和 `Device login` 登录方式；4.11.0 的后台界面
+只能设置前者，所以见 [Casdoor 笔记](docs/casdoor.md#7-enabling-the-device-flow)。
+
 ## 怎么接到客户端
 
 ### DSH（DeepSeek Harness）
@@ -72,8 +90,8 @@ DSH 的 MCP 客户端**完全不支持 OAuth**，所以这就是它的主场。
 
 **这个仓库本身就是那个 DSH bundle**（根 `package.json` 声明了 `dsh.bundle.patch`），所以 Plugins
 面板可以直接用本仓库的 Git 地址或本地路径安装。（DSH **没有可浏览的插件市场**：它只接受 npm 包名、
-Git 仓库地址、压缩包或本地路径，界面里另外只列 DSH 自带的官方插件。按包名安装需要先把本包发到 npm，
-目前**尚未发布**。）
+Git 仓库地址、压缩包或本地路径，界面里另外只列 DSH 自带的官方插件。本包**已发布到 npm**，所以按包名
+安装这条路也可用。）
 
 `print-config` 给出的两个值怎么填、以及注意事项，见 [`dsh/README.md`](dsh/README.md)。
 

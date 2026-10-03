@@ -286,8 +286,8 @@ export function buildAuthorizeUrl({
   return url.toString();
 }
 
-async function postForm(tokenEndpoint, params, { fetchImpl, timeoutMs }) {
-  const { res, body } = await getJson(tokenEndpoint, {
+async function postForm(endpoint, params, { fetchImpl, timeoutMs, label = 'token request' }) {
+  const { res, body } = await getJson(endpoint, {
     fetchImpl,
     timeoutMs,
     init: {
@@ -298,7 +298,7 @@ async function postForm(tokenEndpoint, params, { fetchImpl, timeoutMs }) {
   });
   if (!res.ok || body?.error) {
     const detail = [body?.error, body?.error_description].filter(Boolean).join(': ') || `HTTP ${res.status}`;
-    throw new OAuthError(`token request failed (${detail})`, { code: body?.error, description: body?.error_description });
+    throw new OAuthError(`${label} failed (${detail})`, { code: body?.error, description: body?.error_description });
   }
   return body;
 }
@@ -331,6 +331,101 @@ export function refreshTokens({ tokenEndpoint, clientId, refreshToken, resource,
     },
     { fetchImpl, timeoutMs },
   );
+}
+
+// --------------------------------------- RFC 8628 device authorization (browserless hosts)
+
+/** The grant type a device-flow client exchanges its device code with. */
+export const DEVICE_CODE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
+
+/**
+ * Read a device-authorization response, tolerating the field-name variants seen in the wild.
+ * RFC 8628 §3.2 mandates the snake_case names; some servers also emit camelCase, and a client
+ * that only knows one spelling fails for no good reason.
+ */
+export function normalizeDeviceAuthorization(body) {
+  const pick = (...names) => names.map((name) => body?.[name]).find((value) => value !== undefined && value !== '');
+  const authorization = {
+    deviceCode: pick('device_code', 'deviceCode'),
+    userCode: pick('user_code', 'userCode'),
+    verificationUri: pick('verification_uri', 'verificationUri', 'verification_url'),
+    verificationUriComplete: pick('verification_uri_complete', 'verificationUriComplete'),
+    expiresInSeconds: Number(pick('expires_in', 'expiresIn') ?? 600),
+    intervalSeconds: Number(pick('interval') ?? 5),
+    raw: body,
+  };
+  if (!authorization.deviceCode || !authorization.userCode) {
+    throw new OAuthError(`the device authorization response carried no device_code/user_code: ${JSON.stringify(body)}`);
+  }
+  return authorization;
+}
+
+/**
+ * Ask for a device code (RFC 8628 §3.1). No browser, no listener, no redirect URI — which is
+ * exactly what makes this flow usable on a headless host (a container, a CI runner, a server).
+ */
+export function requestDeviceCode({ deviceAuthorizationEndpoint, clientId, scope, resource, fetchImpl, timeoutMs }) {
+  const scopeValue = Array.isArray(scope) ? scope.join(' ') : scope;
+  return postForm(
+    deviceAuthorizationEndpoint,
+    {
+      client_id: clientId,
+      ...(scopeValue ? { scope: scopeValue } : {}),
+      ...(resource ? { resource } : {}),
+    },
+    { fetchImpl, timeoutMs, label: 'device authorization request' },
+  );
+}
+
+const realSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Poll the token endpoint until a human approves (RFC 8628 §3.4–3.5).
+ * `authorization_pending` keeps waiting; `slow_down` widens the interval by 5s as the RFC
+ * requires; anything else is final. Tests inject `sleep`/`now` so nothing really waits.
+ */
+export async function pollDeviceToken({
+  tokenEndpoint,
+  clientId,
+  deviceCode,
+  intervalSeconds = 5,
+  expiresInSeconds = 600,
+  resource,
+  fetchImpl,
+  timeoutMs,
+  sleep = realSleep,
+  now = Date.now,
+  onWait = () => {},
+}) {
+  const deadline = now() + Math.max(1, Number(expiresInSeconds) || 600) * 1000;
+  let intervalMs = Math.max(1000, (Number(intervalSeconds) || 5) * 1000);
+  for (;;) {
+    try {
+      return await postForm(
+        tokenEndpoint,
+        {
+          grant_type: DEVICE_CODE_GRANT,
+          device_code: deviceCode,
+          client_id: clientId,
+          ...(resource ? { resource } : {}),
+        },
+        { fetchImpl, timeoutMs },
+      );
+    } catch (error) {
+      if (error.code === 'authorization_pending') {
+        // the human has not approved yet — keep polling
+      } else if (error.code === 'slow_down') {
+        intervalMs += 5000;
+      } else {
+        throw error; // access_denied, expired_token, invalid_grant, …
+      }
+      if (now() + intervalMs > deadline) {
+        throw new OAuthError('the device code expired before it was approved', { code: 'expired_token' });
+      }
+      onWait({ intervalMs, remainingMs: deadline - now() });
+      await sleep(intervalMs);
+    }
+  }
 }
 
 /**
