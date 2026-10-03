@@ -27,6 +27,7 @@
     "bin",
     "src",
     "dsh",
+    "docs",
     "locale",
     "README.md",
     "README.zh.md",
