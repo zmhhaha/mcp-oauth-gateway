@@ -48,19 +48,21 @@ OAuth 2.1 authorization server with PKCE works.
 
 ## Quick start
 
-```bash
-git clone https://github.com/zmhhaha/mcp-oauth-gateway
-cd mcp-oauth-gateway
+No clone needed — it is published on npm:
 
-# 1. Authorize once (opens a browser; stores tokens outside the repo)
-node bin/mcp-oauth-gateway.mjs login --url https://your-mcp-host/mcp
+```bash
+# 1. Authorize once (opens a browser; stores tokens outside any repo)
+npx mcp-oauth-gateway login --url https://your-mcp-host/mcp
 
 # 2. Run the gateway
-node bin/mcp-oauth-gateway.mjs serve --url https://your-mcp-host/mcp --port 33419
+npx mcp-oauth-gateway serve --url https://your-mcp-host/mcp --port 33419
 
 # 3. Print ready-to-paste client configuration
-node bin/mcp-oauth-gateway.mjs print-config --url https://your-mcp-host/mcp
+npx mcp-oauth-gateway print-config --url https://your-mcp-host/mcp
 ```
+
+Or from a checkout (`git clone https://github.com/zmhhaha/mcp-oauth-gateway`), replacing
+`npx mcp-oauth-gateway` with `node bin/mcp-oauth-gateway.mjs`.
 
 If your authorization server does not offer dynamic client registration, add `--client-id <id>`
 to `login`. The error message tells you the redirect URI to register.
@@ -174,6 +176,22 @@ node --test          # 32 tests, no network required
 The suite covers the RFC 7636 PKCE vector, challenge and metadata parsing, the manual-client
 error paths, token-store semantics, the loopback proxy (including a test that proves SSE frames
 are **streamed and not buffered**), and the transport selection per upstream scheme.
+
+### Releasing
+
+Two traps that cost real time on the first publish, both silent:
+
+1. **Never write a `bin` path with a leading `./`.** `"mcp-oauth-gateway": "./bin/x.mjs"` makes
+   npm consider the entry invalid and **drop the whole `bin` field** from the published
+   package — `npm publish` only warns, and `npx` then fails with no obvious cause. Use
+   `"bin/x.mjs"`. `npm pkg fix` corrects it.
+2. **npm 11 has staged publishing, and a bypass-2FA token is no longer the recommended route.**
+   `npm publish` may leave the version unpublished while the registry reserves the name with a
+   `0.0.0-stage` placeholder; the metadata for a brand-new package also takes a minute to appear,
+   so an immediate `npm view` or `npx <pkg>@<version>` can report `ETARGET` even though the
+   publish succeeded. Check the version endpoint (`registry.npmjs.org/<pkg>/<version>`) before
+   concluding anything, and prefer `npm stage publish` + `npm stage approve` over a bypass token
+   (npm's own guidance). `npm stage list` reads `GET /-/stage`.
 
 ## Notes on specific authorization servers
 

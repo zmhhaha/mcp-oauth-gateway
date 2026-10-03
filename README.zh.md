@@ -45,19 +45,21 @@ PKCE，就能用。
 
 ## 快速开始
 
-```bash
-git clone https://github.com/zmhhaha/mcp-oauth-gateway
-cd mcp-oauth-gateway
+不用 clone —— 已经发布在 npm 上：
 
-# 1) 授权一次（会打开浏览器；凭据存在仓库之外）
-node bin/mcp-oauth-gateway.mjs login --url https://your-mcp-host/mcp
+```bash
+# 1) 授权一次（会打开浏览器；凭据存在任何仓库之外）
+npx mcp-oauth-gateway login --url https://your-mcp-host/mcp
 
 # 2) 启动网关
-node bin/mcp-oauth-gateway.mjs serve --url https://your-mcp-host/mcp --port 33419
+npx mcp-oauth-gateway serve --url https://your-mcp-host/mcp --port 33419
 
 # 3) 打印可直接粘贴的客户端配置
-node bin/mcp-oauth-gateway.mjs print-config --url https://your-mcp-host/mcp
+npx mcp-oauth-gateway print-config --url https://your-mcp-host/mcp
 ```
+
+或者 clone 下来跑（`git clone https://github.com/zmhhaha/mcp-oauth-gateway`），
+把 `npx mcp-oauth-gateway` 换成 `node bin/mcp-oauth-gateway.mjs` 即可。
 
 若你的授权服务器不提供动态注册，`login` 时加 `--client-id <id>`；报错信息会告诉你该登记哪个
 回调地址。
@@ -161,6 +163,20 @@ node --test          # 32 个测试，不需要网络
 
 覆盖：RFC 7636 的 PKCE 标准向量、挑战头与元数据解析、手工配置 client 的错误路径、凭据存储语义、
 回环代理（**含一条"SSE 是流式转发、不是缓冲"的实测**），以及按上游协议选择传输模块。
+
+### 发布（Release）
+
+第一次发布踩到两个**静默**的坑，各花了不少时间：
+
+1. **`bin` 路径绝不能带 `./` 前缀。** `"mcp-oauth-gateway": "./bin/x.mjs"` 会被 npm 判定非法，
+   并且**把整个 `bin` 字段从发布的包里丢掉** —— `npm publish` 只给一行 warning，之后 `npx`
+   失败还看不出原因。写成 `"bin/x.mjs"`。`npm pkg fix` 会自动修。
+2. **npm 11 有了分阶段发布（staged publishing），"bypass 2FA 的 granular token"已不再是推荐做法。**
+   `npm publish` 可能让版本处于未公开状态、而注册表先用 `0.0.0-stage` 占住包名；**全新包的元数据
+   也要过一会儿才出现**，所以紧接着跑 `npm view` 或 `npx <pkg>@<version>` 可能报 `ETARGET`，
+   而实际上已经发布成功。判断前先查版本端点 `registry.npmjs.org/<pkg>/<version>`；
+   优先用 `npm stage publish` + `npm stage approve`，而不是 bypass token（npm 官方建议）。
+   `npm stage list` 读的是 `GET /-/stage`。
 
 ## 特定授权服务器的笔记
 
