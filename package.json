@@ -13,7 +13,7 @@
     "url": "https://github.com/zmhhaha/mcp-oauth-gateway/issues"
   },
   "bin": {
-    "mcp-oauth-gateway": "./bin/mcp-oauth-gateway.mjs"
+    "mcp-oauth-gateway": "bin/mcp-oauth-gateway.mjs"
   },
   "main": "./src/oauth.mjs",
   "exports": {
