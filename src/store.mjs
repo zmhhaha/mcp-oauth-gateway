@@ -58,8 +58,22 @@ export function ensureLocalToken(state) {
   return state.localToken;
 }
 
-function expiresAtFrom(response, now) {
-  const seconds = Number(response?.expires_in);
+/**
+ * A name a client can use for this MCP server, derived from its host:
+ * `openspec.panghuer.top` → `openspec`. DSH constrains server names to
+ * `[A-Za-z0-9_-]{1,32}`, hence the sanitising and truncation.
+ */
+export function serverNameFor(mcpUrl) {
+  let label = '';
+  try {
+    label = new URL(mcpUrl).hostname.split('.')[0];
+  } catch {
+    label = '';
+  }
+  return label.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32) || 'mcp';
+}
+
+function expiresAtFrom(response, now) {  const seconds = Number(response?.expires_in);
   return Number.isFinite(seconds) && seconds > 0 ? now + seconds * 1000 : null;
 }
 
@@ -89,7 +103,7 @@ export function tokenStatus(state, { now = Date.now(), skewMs = EXPIRY_SKEW_MS }
   return tokens.refresh_token ? 'refreshable' : 'expired';
 }
 
-/** A description safe to print: never includes a token or refresh token. */
+/** A description safe to print: never includes a token, refresh token or client secret. */
 export function describeState(state, { now = Date.now(), skewMs = EXPIRY_SKEW_MS } = {}) {
   const status = tokenStatus(state, { now, skewMs });
   return {
@@ -97,10 +111,15 @@ export function describeState(state, { now = Date.now(), skewMs = EXPIRY_SKEW_MS
     resource: state.resource,
     authorizationServer: state.authorizationServer,
     clientId: state.clientId,
+    clientSecretPresent: Boolean(state.clientSecret),
+    tokenAuthMethod: state.clientSecret ? state.tokenAuthMethod || null : null,
     dynamicallyRegistered: Boolean(state.dynamicallyRegistered),
     status,
     expiresAt: state.tokens?.expires_at ? new Date(state.tokens.expires_at).toISOString() : null,
     refreshTokenPresent: Boolean(state.tokens?.refresh_token),
     scopes: state.tokens?.scope || null,
+    // Names only: a value could be sensitive, and the names are what diagnose a misconfiguration.
+    authorizeParams: Object.keys(state.authorizeParams || {}),
+    tokenParams: Object.keys(state.tokenParams || {}),
   };
 }

@@ -67,6 +67,33 @@ Or from a checkout (`git clone https://github.com/zmhhaha/mcp-oauth-gateway`), r
 If your authorization server does not offer dynamic client registration, add `--client-id <id>`
 to `login`. The error message tells you the redirect URI to register.
 
+### Confidential clients and server-specific parameters
+
+The default flow is a **public client**: PKCE, no secret. That is the right shape for a loopback
+CLI and what most MCP servers accept. If your authorization server issues a client secret, pass it
+by environment variable so it stays out of `ps` and your shell history:
+
+```bash
+export MCP_CLIENT_SECRET=…          # from your secret store
+npx mcp-oauth-gateway login --url https://your-mcp-host/mcp \
+  --client-id <id> --client-secret-env MCP_CLIENT_SECRET
+```
+
+The secret is stored beside the tokens (mode 600, outside any repo) and a plain `serve` picks it up
+from there, so no flags have to be repeated. `--token-auth-method client_secret_post` switches away
+from HTTP Basic for servers that want the secret in the body. A secret handed out by dynamic
+registration is stored the same way.
+
+Some servers require parameters the MCP authorization specification never mentions. Both flags
+repeat, and both are remembered for later refreshes:
+
+```bash
+# Google: without access_type=offline the server issues no refresh token at all
+--authorize-param access_type=offline --authorize-param prompt=consent
+# Auth0: the API identifier the access token must be addressed to
+--token-param audience=https://api.example
+```
+
 ### Headless hosts: containers, CI, servers
 
 The flow above opens a browser and receives the redirect on `http://localhost:<port>/oauth/callback`,

@@ -13,7 +13,15 @@ import fs from 'node:fs';
 
 import { OAuthError } from './oauth.mjs';
 import { createGateway, login, loginWithDeviceCode } from './gateway.mjs';
-import { defaultStoreDir, describeState, ensureLocalToken, loadState, saveState, storeFileFor } from './store.mjs';
+import {
+  defaultStoreDir,
+  describeState,
+  ensureLocalToken,
+  loadState,
+  saveState,
+  serverNameFor,
+  storeFileFor,
+} from './store.mjs';
 
 const USAGE = `mcp-oauth-gateway — OAuth 2.1 for MCP clients that only speak a static header
 
@@ -38,6 +46,12 @@ Options
   --auth-server <url>    issuer override when the server has no RFC 9728 challenge
   --store <dir>          state directory  (default ${defaultStoreDir()})
   --device               device flow: no browser, no listener, no redirect (for containers)
+  --client-secret <s>    confidential client secret (visible in ps output; prefer the next flag)
+  --client-secret-env <VAR>  read the client secret from an environment variable
+  --token-auth-method <m>    client_secret_basic (default) or client_secret_post
+  --authorize-param k=v  extra authorization-endpoint parameter, repeatable
+  --token-param k=v      extra token-endpoint parameter, repeatable
+  --server-name <name>   name used in print-config snippets (default: from the URL host)
   --no-open              do not try to open a browser (print the URL instead)
   --quiet                suppress progress output
   -h, --help             this text
@@ -66,6 +80,7 @@ function parseArgs(argv) {
       else value = true;
     }
     if (key === 'scope') out.scope.push(...String(value).split(/[,\s]+/).filter(Boolean));
+    else if (key === 'authorizeParam' || key === 'tokenParam') (out[key] ||= []).push(String(value));
     else out[key] = value;
   }
   return out;
@@ -97,23 +112,52 @@ function gatewayOptions(options, { state, stateFile, url, log }) {
     proxyPort: Number(options.port || 33419),
     redirectHost: String(options.redirectHost || 'localhost'),
     clientId: options.clientId ? String(options.clientId) : undefined,
+    clientSecret: resolveClientSecret(options),
+    tokenAuthMethod: options.tokenAuthMethod ? String(options.tokenAuthMethod) : undefined,
+    authorizeParams: paramPairs(options.authorizeParam, '--authorize-param'),
+    tokenParams: paramPairs(options.tokenParam, '--token-param'),
     authorizationServer: options.authServer ? String(options.authServer) : undefined,
     scopes: options.scope.length ? options.scope : undefined,
     log,
   };
 }
 
-function clientSnippets({ localUrl, localToken, proxyPort }) {
+/**
+ * The client secret, preferring an environment variable so it never lands in the shell history
+ * or in `ps` output. `--client-secret` exists for one-off use and says so in the usage text.
+ */
+function resolveClientSecret(options) {
+  if (options.clientSecretEnv) {
+    const name = String(options.clientSecretEnv);
+    const value = process.env[name];
+    if (!value) throw new Error(`--client-secret-env ${name}: that variable is unset or empty`);
+    return value;
+  }
+  return options.clientSecret ? String(options.clientSecret) : undefined;
+}
+
+/** Turn repeated `k=v` flags into an object, rejecting a malformed pair loudly. */
+function paramPairs(values, flag) {
+  const out = {};
+  for (const raw of values || []) {
+    const index = raw.indexOf('=');
+    if (index <= 0) throw new Error(`${flag} expects key=value, got "${raw}"`);
+    out[raw.slice(0, index)] = raw.slice(index + 1);
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function clientSnippets({ localUrl, localToken, proxyPort, serverName = 'mcp' }) {
   return `Local gateway URL : ${localUrl}
 Local gateway token: ${localToken}      <- stable; NOT the OAuth credential
 
 DSH (DeepSeek Harness) — add to %USERPROFILE%\\.dsh\\profiles\\<profile>\\cordis.patch.yml
 ------------------------------------------------------------------------------
 - insert:
-    - id: openspec-mcp
+    - id: ${serverName}-mcp
       name: '@deepseek-ai/dsh-mcp-client'
       config:
-        serverName: openspec
+        serverName: ${serverName}
         transport: streamable-http
         url: ${localUrl}
         headers:
@@ -124,7 +168,7 @@ Generic MCP client (Cursor, Windsurf, Claude Desktop, ...)
 ------------------------------------------------------------------------------
 {
   "mcpServers": {
-    "openspec": {
+    "${serverName}": {
       "type": "http",
       "url": "${localUrl}",
       "headers": { "x-mcp-gateway-token": "${localToken}" }
@@ -154,6 +198,11 @@ async function main(argv) {
   }
 
   const log = options.quiet ? () => {} : (message) => process.stderr.write(`${message}\n`);
+
+  // Validate the repeatable k=v flags for every command, so a typo is a loud error rather than
+  // a flag that the command happens to ignore.
+  paramPairs(options.authorizeParam, '--authorize-param');
+  paramPairs(options.tokenParam, '--token-param');
 
   switch (command) {
     case 'login': {
@@ -204,8 +253,14 @@ async function main(argv) {
     case 'print-config': {
       const { url, state } = loadOrInit({ ...options, url: required(options, 'url') });
       const proxyPort = Number(options.port || 33419);
+      const serverName = options.serverName ? String(options.serverName) : serverNameFor(url);
       process.stdout.write(
-        clientSnippets({ localUrl: `http://127.0.0.1:${proxyPort}/mcp`, localToken: state.localToken, proxyPort }),
+        clientSnippets({
+          localUrl: `http://127.0.0.1:${proxyPort}/mcp`,
+          localToken: state.localToken,
+          proxyPort,
+          serverName,
+        }),
       );
       return 0;
     }

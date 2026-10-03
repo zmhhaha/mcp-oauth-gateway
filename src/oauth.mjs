@@ -192,7 +192,7 @@ export function pickEndpoints(metadata) {
   return { authorizationEndpoint, tokenEndpoint, registrationEndpoint: metadata.registration_endpoint };
 }
 
-/** RFC 7591 dynamic client registration. Public client: PKCE, no secret. */
+/** RFC 7591 dynamic client registration. We ask for a public client; a returned secret is kept. */
 export async function registerClient({
   registrationEndpoint,
   redirectUri,
@@ -244,14 +244,23 @@ export async function resolveClient({ metadata, clientId, redirectUri, fetchImpl
   }
   try {
     const registration = await registerClient({ registrationEndpoint, redirectUri, fetchImpl, timeoutMs });
-    return { clientId: registration.client_id, dynamicallyRegistered: true, registration };
+    return {
+      clientId: registration.client_id,
+      // Servers that issue a secret at registration mean it: refresh without it is refused.
+      clientSecret: registration.client_secret,
+      tokenAuthMethod: registration.client_secret
+        ? chooseTokenAuthMethod(metadata, registration.token_endpoint_auth_method)
+        : undefined,
+      dynamicallyRegistered: true,
+      registration,
+    };
   } catch (error) {
     throw new OAuthError(
       `${error.message}\n` +
         'Register an application manually instead:\n' +
         `  1. register an application with the authorization server\n` +
         `  2. add ${redirectUri} to its allowed redirect URIs\n` +
-        '  3. pass --client-id <client id> (no client secret is needed: this gateway always uses PKCE)',
+        '  3. pass --client-id <client id> (add --client-secret-env <VAR> if it also issues a secret)',
       { code: error.code, description: error.description },
     );
   }
@@ -266,6 +275,7 @@ export function buildAuthorizeUrl({
   challenge,
   resource,
   scopes = ['openid', 'email', 'profile'],
+  extraParams,
 }) {
   const url = new URL(authorizationEndpoint);
   // Merge instead of replacing: an authorization endpoint may legitimately carry its own
@@ -281,30 +291,79 @@ export function buildAuthorizeUrl({
     // RFC 8707: ask for a token bound to *this* MCP server. Servers that ignore it are
     // unaffected; servers that honour it (Casdoor >= 4.11 does) emit aud = resource.
     ...(resource ? { resource } : {}),
+    // Server-specific extras last, so they can override anything above (Google's
+    // `access_type=offline`, Auth0's `audience`, a different `scope`, …).
+    ...(extraParams || {}),
   };
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   return url.toString();
 }
 
-async function postForm(endpoint, params, { fetchImpl, timeoutMs, label = 'token request' }) {
-  const { res, body } = await getJson(endpoint, {
+/**
+ * Which client authentication to use. `token_endpoint_auth_methods_supported` is advisory, so
+ * an unlisted or unknown value falls back to HTTP Basic — RFC 6749 §2.3.1 says clients SHOULD
+ * use Basic, and it is the method every major server (GitHub, Google, Okta, Auth0) accepts.
+ */
+export function chooseTokenAuthMethod(metadata, explicit) {
+  if (explicit) return explicit;
+  const methods = metadata?.token_endpoint_auth_methods_supported;
+  if (Array.isArray(methods)) {
+    if (methods.includes('client_secret_basic')) return 'client_secret_basic';
+    if (methods.includes('client_secret_post')) return 'client_secret_post';
+  }
+  return 'client_secret_basic';
+}
+
+/**
+ * RFC 6749 §2.3.1 prescribes form-encoding both halves before base64. In practice every
+ * widely used server builds and expects plain `base64(id + ":" + secret)`, and a secret
+ * containing `:` is rejected by those same servers either way — so plain is what we send.
+ */
+function basicAuthHeader(clientId, clientSecret) {
+  return `Basic ${Buffer.from(`${clientId}:${clientSecret}`, 'utf8').toString('base64')}`;
+}
+
+async function postForm(endpoint, params, { fetchImpl, timeoutMs, label = 'token request', clientAuth }) {
+  const body = { ...params };
+  const headers = { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' };
+  if (clientAuth?.clientSecret) {
+    if (clientAuth.method === 'client_secret_post') {
+      body.client_secret = clientAuth.clientSecret;
+    } else {
+      // One authentication method per request, so `client_id` moves into the header.
+      headers.authorization = basicAuthHeader(clientAuth.clientId, clientAuth.clientSecret);
+      delete body.client_id;
+    }
+  }
+  const { res, body: payload } = await getJson(endpoint, {
     fetchImpl,
     timeoutMs,
     init: {
       method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
-      body: new URLSearchParams(params).toString(),
+      headers,
+      body: new URLSearchParams(body).toString(),
     },
   });
-  if (!res.ok || body?.error) {
-    const detail = [body?.error, body?.error_description].filter(Boolean).join(': ') || `HTTP ${res.status}`;
-    throw new OAuthError(`${label} failed (${detail})`, { code: body?.error, description: body?.error_description });
+  if (!res.ok || payload?.error) {
+    const detail = [payload?.error, payload?.error_description].filter(Boolean).join(': ') || `HTTP ${res.status}`;
+    throw new OAuthError(`${label} failed (${detail})`, { code: payload?.error, description: payload?.error_description });
   }
-  return body;
+  return payload;
 }
 
-/** Exchange the authorization code. Public client + PKCE, so no client secret. */
-export function exchangeCode({ tokenEndpoint, clientId, code, redirectUri, verifier, resource, fetchImpl, timeoutMs }) {
+/** Exchange the authorization code. Public clients use PKCE; confidential ones add a secret. */
+export function exchangeCode({
+  tokenEndpoint,
+  clientId,
+  code,
+  redirectUri,
+  verifier,
+  resource,
+  clientAuth,
+  extraParams,
+  fetchImpl,
+  timeoutMs,
+}) {
   return postForm(
     tokenEndpoint,
     {
@@ -314,13 +373,23 @@ export function exchangeCode({ tokenEndpoint, clientId, code, redirectUri, verif
       client_id: clientId,
       code_verifier: verifier,
       ...(resource ? { resource } : {}),
+      ...(extraParams || {}),
     },
-    { fetchImpl, timeoutMs },
+    { fetchImpl, timeoutMs, clientAuth },
   );
 }
 
 /** Silent renewal. `resource` is sent again so the refreshed token stays bound to it. */
-export function refreshTokens({ tokenEndpoint, clientId, refreshToken, resource, fetchImpl, timeoutMs }) {
+export function refreshTokens({
+  tokenEndpoint,
+  clientId,
+  refreshToken,
+  resource,
+  clientAuth,
+  extraParams,
+  fetchImpl,
+  timeoutMs,
+}) {
   return postForm(
     tokenEndpoint,
     {
@@ -328,8 +397,9 @@ export function refreshTokens({ tokenEndpoint, clientId, refreshToken, resource,
       refresh_token: refreshToken,
       client_id: clientId,
       ...(resource ? { resource } : {}),
+      ...(extraParams || {}),
     },
-    { fetchImpl, timeoutMs },
+    { fetchImpl, timeoutMs, clientAuth },
   );
 }
 
@@ -364,7 +434,15 @@ export function normalizeDeviceAuthorization(body) {
  * Ask for a device code (RFC 8628 §3.1). No browser, no listener, no redirect URI — which is
  * exactly what makes this flow usable on a headless host (a container, a CI runner, a server).
  */
-export function requestDeviceCode({ deviceAuthorizationEndpoint, clientId, scope, resource, fetchImpl, timeoutMs }) {
+export function requestDeviceCode({
+  deviceAuthorizationEndpoint,
+  clientId,
+  scope,
+  resource,
+  clientAuth,
+  fetchImpl,
+  timeoutMs,
+}) {
   const scopeValue = Array.isArray(scope) ? scope.join(' ') : scope;
   return postForm(
     deviceAuthorizationEndpoint,
@@ -373,7 +451,7 @@ export function requestDeviceCode({ deviceAuthorizationEndpoint, clientId, scope
       ...(scopeValue ? { scope: scopeValue } : {}),
       ...(resource ? { resource } : {}),
     },
-    { fetchImpl, timeoutMs, label: 'device authorization request' },
+    { fetchImpl, timeoutMs, label: 'device authorization request', clientAuth },
   );
 }
 
@@ -391,6 +469,8 @@ export async function pollDeviceToken({
   intervalSeconds = 5,
   expiresInSeconds = 600,
   resource,
+  clientAuth,
+  extraParams,
   fetchImpl,
   timeoutMs,
   sleep = realSleep,
@@ -408,8 +488,9 @@ export async function pollDeviceToken({
           device_code: deviceCode,
           client_id: clientId,
           ...(resource ? { resource } : {}),
+          ...(extraParams || {}),
         },
-        { fetchImpl, timeoutMs },
+        { fetchImpl, timeoutMs, clientAuth },
       );
     } catch (error) {
       if (error.code === 'authorization_pending') {

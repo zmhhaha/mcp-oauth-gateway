@@ -201,7 +201,7 @@ test('resolveClient turns a rejected registration into instructions, not a stack
     (error) =>
       error instanceof OAuthError &&
       /dynamic client registration is disabled/.test(error.message) &&
-      /no client secret is needed/.test(error.message),
+      /--client-secret-env/.test(error.message),
   );
 });
 

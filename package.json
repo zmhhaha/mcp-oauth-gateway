@@ -1,6 +1,6 @@
 {
   "name": "mcp-oauth-gateway",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "OAuth 2.1 for MCP clients that only know how to send a static Authorization header: a loopback gateway that does RFC 9728 discovery, PKCE and silent refresh on their behalf.",
   "type": "module",
   "license": "MIT",

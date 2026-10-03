@@ -64,6 +64,30 @@ npx mcp-oauth-gateway print-config --url https://your-mcp-host/mcp
 若你的授权服务器不提供动态注册，`login` 时加 `--client-id <id>`；报错信息会告诉你该登记哪个
 回调地址。
 
+### 机密客户端与服务器特有参数
+
+默认走**公共客户端**：PKCE、无密钥——这对回环 CLI 是正确形态，也是多数 MCP 服务器接受的。
+若你的授权服务器会签发 client secret，**用环境变量传**，别让它进 `ps` 和 shell 历史：
+
+```bash
+export MCP_CLIENT_SECRET=…          # 从你的密钥管理里取
+npx mcp-oauth-gateway login --url https://your-mcp-host/mcp \
+  --client-id <id> --client-secret-env MCP_CLIENT_SECRET
+```
+
+密钥存放在凭据旁边（mode 600、在任何仓库之外），之后裸跑 `serve` 会自动从那里取，不必重复传参。
+`--token-auth-method client_secret_post` 用于那些要求把密钥放在请求体里、而非 HTTP Basic 的服务器。
+动态注册返回的密钥也按同样方式存下来。
+
+有些服务器需要 MCP 授权规范里根本没提的参数。下面两个都可重复，且**会被记住用于后续静默续期**：
+
+```bash
+# Google：不传 access_type=offline 就根本不签发 refresh token
+--authorize-param access_type=offline --authorize-param prompt=consent
+# Auth0：access token 必须指向的 API 标识
+--token-param audience=https://api.example
+```
+
 ### 无浏览器的主机：容器、CI、服务器
 
 上面的流程要开浏览器、并把回调收到 `http://localhost:<端口>/oauth/callback`——在没有浏览器的机器上

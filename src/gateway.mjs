@@ -150,6 +150,10 @@ export async function createGateway(options) {
     localPath = '/mcp',
     scopes = ['openid', 'email', 'profile'],
     clientId: configuredClientId,
+    clientSecret: configuredClientSecret,
+    tokenAuthMethod: configuredTokenAuthMethod,
+    authorizeParams: configuredAuthorizeParams,
+    tokenParams: configuredTokenParams,
     authorizationServer,
     log = () => {},
     fetchImpl = fetch,
@@ -164,6 +168,19 @@ export async function createGateway(options) {
   let discovery = null;
 
   const save = () => saveState(stateFile, state);
+
+  /**
+   * Client authentication for the token endpoint. A secret can come from the CLI (a confidential
+   * client) or from dynamic registration; either way the flow persists it with the state, because
+   * a bare `serve` receives no flags yet must still refresh silently.
+   */
+  const clientAuthFor = (clientId) => ({
+    clientId: clientId || state.clientId || configuredClientId,
+    clientSecret: configuredClientSecret || state.clientSecret,
+    method: configuredTokenAuthMethod || state.tokenAuthMethod || 'client_secret_basic',
+  });
+  const tokenParams = () => configuredTokenParams || state.tokenParams;
+  const authorizeParams = () => configuredAuthorizeParams || state.authorizeParams;
 
   async function discover({ refresh = false } = {}) {
     if (discovery && !refresh) return discovery;
@@ -187,6 +204,8 @@ export async function createGateway(options) {
       clientId: state.clientId,
       refreshToken: state.tokens.refresh_token,
       resource: state.resource,
+      clientAuth: clientAuthFor(state.clientId),
+      extraParams: tokenParams(),
       fetchImpl,
     });
     applyTokenResponse(state, response);
@@ -216,7 +235,7 @@ export async function createGateway(options) {
   async function beginLogin() {
     const current = await discover();
     const { authorizationEndpoint } = pickEndpoints(current.metadata);
-    const { clientId, dynamicallyRegistered } = await resolveClient({
+    const { clientId, dynamicallyRegistered, clientSecret, tokenAuthMethod } = await resolveClient({
       metadata: current.metadata,
       clientId: configuredClientId || state.clientId,
       redirectUri,
@@ -224,6 +243,13 @@ export async function createGateway(options) {
     });
     state.clientId = clientId;
     state.dynamicallyRegistered = dynamicallyRegistered;
+    // Remember how to authenticate and what extras to send: `serve` runs with no flags.
+    if (configuredClientSecret || clientSecret) state.clientSecret = configuredClientSecret || clientSecret;
+    if (configuredTokenAuthMethod || tokenAuthMethod) {
+      state.tokenAuthMethod = configuredTokenAuthMethod || tokenAuthMethod;
+    }
+    if (configuredAuthorizeParams) state.authorizeParams = configuredAuthorizeParams;
+    if (configuredTokenParams) state.tokenParams = configuredTokenParams;
     save();
 
     const { verifier, challenge } = createPkce();
@@ -238,8 +264,12 @@ export async function createGateway(options) {
       challenge,
       resource: current.resource,
       scopes,
+      extraParams: authorizeParams(),
     });
-    log(`client_id ${clientId}${dynamicallyRegistered ? ' (dynamically registered)' : ''}`);
+    log(
+      `client_id ${clientId}${dynamicallyRegistered ? ' (dynamically registered)' : ''}` +
+        `${state.clientSecret ? ` with a client secret (${state.tokenAuthMethod})` : ''}`,
+    );
     return url;
   }
 
@@ -269,6 +299,8 @@ export async function createGateway(options) {
         redirectUri,
         verifier: pending.verifier,
         resource: current.resource,
+        clientAuth: clientAuthFor(state.clientId),
+        extraParams: tokenParams(),
         fetchImpl,
       });
       applyTokenResponse(state, response);
@@ -504,7 +536,7 @@ export async function loginWithDeviceCode(options) {
   }
 
   const redirectUri = `http://${options.redirectHost || 'localhost'}:${options.proxyPort || 33419}/oauth/callback`;
-  const { clientId, dynamicallyRegistered } = await resolveClient({
+  const { clientId, dynamicallyRegistered, clientSecret, tokenAuthMethod } = await resolveClient({
     metadata: discovery.metadata,
     clientId: configuredClientId,
     redirectUri,
@@ -516,7 +548,19 @@ export async function loginWithDeviceCode(options) {
   state.authorizationServer = discovery.authorizationServer;
   state.clientId = clientId;
   state.dynamicallyRegistered = dynamicallyRegistered;
+  if (options.clientSecret || clientSecret) state.clientSecret = options.clientSecret || clientSecret;
+  if (options.tokenAuthMethod || tokenAuthMethod) {
+    state.tokenAuthMethod = options.tokenAuthMethod || tokenAuthMethod;
+  }
+  if (options.authorizeParams) state.authorizeParams = options.authorizeParams;
+  if (options.tokenParams) state.tokenParams = options.tokenParams;
   saveState(stateFile, state);
+
+  const clientAuth = {
+    clientId,
+    clientSecret: state.clientSecret,
+    method: state.tokenAuthMethod || 'client_secret_basic',
+  };
 
   const authorization = normalizeDeviceAuthorization(
     await requestDeviceCode({
@@ -524,6 +568,7 @@ export async function loginWithDeviceCode(options) {
       clientId,
       scope: scopes,
       resource: discovery.resource,
+      clientAuth,
       fetchImpl,
     }),
   );
@@ -544,6 +589,8 @@ export async function loginWithDeviceCode(options) {
     intervalSeconds: authorization.intervalSeconds,
     expiresInSeconds: authorization.expiresInSeconds,
     resource: discovery.resource,
+    clientAuth,
+    extraParams: state.tokenParams,
     fetchImpl,
     now,
     sleep,
